@@ -1,0 +1,44 @@
+esphome:
+  name: telephone
+  friendly_name: telephone
+
+esp32:
+  board: esp32dev
+  framework:
+    type: esp-idf
+
+# Enable logging
+logger:
+
+# Enable Home Assistant API
+api:
+  encryption:
+    key: "JIfaMgf9LImo+uUI6efK/+1c1v9nYnYNiNFQK56xzYk="
+
+ota:
+  - platform: esphome
+    password: "28cae50d7289dd27f986761948b7d2dc"
+
+wifi:
+  ssid: !secret wifi_ssid
+  password: !secret wifi_password
+
+  # Enable fallback hotspot (captive portal) in case wifi connection fails
+  ap:
+    ssid: "Telephone Fallback Hotspot"
+    password: "Ws2cDekp9TIE"
+
+captive_portal:
+
+# Top-level output definition
+output:
+  - platform: gpio
+    pin: 4        # safe GPIO
+    id: led
+
+# Interval to toggle LED
+interval:
+  - interval: 1s
+    then:
+      - output.toggle: led
+
