@@ -30,15 +30,202 @@ wifi:
 
 captive_portal:
 
-# Top-level output definition
+
+# -------------------------
+# Inputs
+# -------------------------
+
+# Analog input for speaker detection
+sensor:
+  - platform: adc
+    pin: GPIO36                 # Adjust to your speaker input pin
+    name: "Speaker Voltage"
+    id: speaker_voltage
+    update_interval: 50ms
+    filters:
+      - sliding_window_moving_average:
+          window_size: 5
+          send_every: 1
+
+binary_sensor:
+  # Hook switch input
+  - platform: gpio
+    pin:
+      number: GPIO16             # Hook switch GPIO
+      mode: INPUT_PULLUP
+      inverted: True
+    name: "Hook"
+    id: hook
+    on_press:
+      then:
+        - script.execute: hook_down
+    on_release:
+      then:
+        - script.execute: hook_up
+
+  # Dial pulse input
+  - platform: gpio
+    pin:
+      number: GPIO4             # Dial pulse GPIO
+      mode: INPUT_PULLUP
+      inverted: True
+    name: "Dial"
+    id: dial
+    on_press:
+      then:
+        - script.execute: count_pulses
+
+# -------------------------
+# I2C Bus for Keypad (ADG2188)
+# -------------------------
+i2c:
+  sda: 21
+  scl: 22
+  scan: true
+  id: i2c_bus
+
+i2c_device:
+  id: i2cdev
+  address: 0x2C
+
+# -------------------------
+# Outputs (Bell)
+# -------------------------
 output:
   - platform: gpio
-    pin: 4        # safe GPIO
-    id: led
+    pin: 25
+    id: bell_1
 
-# Interval to toggle LED
+  - platform: gpio
+    pin: 26
+    id: bell_2
+
+# -------------------------
+# Constants
+# -------------------------
+globals:
+  - id: ring_min_voltage
+    type: float
+    initial_value: "2.0"  # Adjust to your threshold voltage for sound detection
+
+  - id: pulse_count
+    type: int
+    initial_value: "0"
+
+  - id: pulse_timer_running
+    type: bool
+    initial_value: "false"
+
+  - id: bell_active # true when the bell is ringing as part of the UK cadence simulation
+    type: bool
+    initial_value: "false"
+
+# -------------------------
+# Scripts
+# -------------------------
 interval:
-  - interval: 1s
+    # 25Hz bell ring
+  - interval: 20ms  # Half-period for 25Hz
     then:
-      - output.toggle: led
+      - lambda: |-
+          if (id(bell_active)) {
+            // Toggle bell_1
+            id(bell_1).toggle();
+            // bell_2 is opposite
+            id(bell_2).write(!id(bell_1).state);
+          } else {
+            // Ensure both off when not ringing
+            id(bell_1).turn_off();
+            id(bell_2).turn_off();
+          }
+
+    # Sound detection
+  - interval: 50ms
+    then:
+      - lambda: |-
+          static bool bell_running = false;
+          if (id(hook).state && id(speaker_voltage).state > id(ring_min_voltage)) {
+            if (!bell_running) {
+              bell_running = true;
+              id(ring_bell).execute();
+            }
+          } else {
+            bell_running = false;
+          }
+
+
+script:
+    # Press a key on the keypad
+  - id: key_press
+    parameters:
+      key: string
+    then:
+      - lambda: |- 
+          id(i2cdev).write_byte(0x00, 0x12);
+          if (auto b = id(i2cdev).read_byte(0x01)) {
+           // TODO
+          }
+
+    # Bell ringing script with UK cadence
+  - id: uk_ring_bell
+    mode: queued
+    then:
+      - lambda: 'id(bell_active) = true;'
+      - delay: 400ms
+      - lambda: 'id(bell_active) = false;'
+      - delay: 200ms
+      - lambda: 'id(bell_active) = true;'
+      - delay: 400ms
+      - lambda: 'id(bell_active) = false;'
+      - delay: 2000ms
+      - while:
+          condition:
+            lambda: 'return id(hook).state && id(speaker_voltage).state > id(ring_min_voltage);'
+          then:
+            - script.execute: uk_ring_bell
+
+  # Hook down pressed
+  - id: hook_down
+    then:
+      - logger.log: "Hook DOWN detected"
+      - if:
+          condition:
+            lambda: 'return id(speaker_voltage).state > id(ring_min_voltage);'
+          then:
+            - script.execute: ring_bell
+            - script.execute: 
+                id: key_press
+                key: "talk"
+              
+  # Hook up pressed
+  - id: hook_up
+    then:
+      - logger.log: "Hook UP detected"
+      - script.execute: 
+          id: key_press
+          key: "end"
+      - output.turn_off: bell_1
+      - output.turn_off: bell_2
+
+  # Count pulses from dial
+  - id: count_pulses
+    then:
+      - lambda: |-
+          if (!id(pulse_timer_running)) {
+            id(pulse_count) = 1;
+            id(pulse_timer_running) = true;
+          } else {
+            id(pulse_count) += 1;
+          }
+      - delay: 1s
+      - lambda: |-
+          if (id(pulse_timer_running)) {
+            ESP_LOGD("main","Dial pulses counted: %d", id(pulse_count));
+            // Send intercom button
+            // Then send number of pulses
+            // For demo: log only
+            id(pulse_count) = 0;
+            id(pulse_timer_running) = false;
+          }
+
 
