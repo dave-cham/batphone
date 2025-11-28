@@ -1,0 +1,83 @@
+esphome:
+  name: test
+  friendly_name: test
+
+esp32:
+  board: esp32dev
+  framework:
+    type: esp-idf
+
+# Enable logging
+logger:
+
+# Enable Home Assistant API
+api:
+  encryption:
+    key: "JIfaMgf9LImo+uUI6efK/+1c1v9nYnYNiNFQK56xzYk="
+
+ota:
+  - platform: esphome
+    password: "28cae50d7289dd27f986761948b7d2dc"
+
+wifi:
+  ssid: !secret wifi_ssid
+  password: !secret wifi_password
+
+  # Enable fallback hotspot (captive portal) in case wifi connection fails
+  ap:
+    ssid: "Telephone Fallback Hotspot"
+    password: "Ws2cDekp9TIE"
+
+captive_portal:
+
+
+output:
+  - platform: gpio
+    pin:
+      number: 26
+      inverted: true
+    id: testop
+
+globals:
+  - id: adg_state
+    type: bool
+    initial_value: "false"
+
+i2c:
+  sda: 21
+  scl: 22
+  scan: true
+  frequency: 50kHz
+
+i2c_device:
+  id: adg2188
+  address: 0x70
+
+switch:
+  - platform: output
+    id: test_switch
+    output: testop
+
+interval:
+  - interval: 1s
+    then:
+      - lambda: |-
+          id(test_switch).toggle();
+
+          uint8_t data[2];
+
+          if(id(adg_state)) {
+            // Close X0 -> Y0
+            data[0] = 0x80; // DATA=1, AX=0, AY=0
+            data[1] = 0x01; // apply immediately
+            ESP_LOGI("adg2188", "Connecting X0 <-> Y0");
+          } else {
+            // Open X0 -> Y0
+            data[0] = 0x00; // DATA=0, AX=0, AY=0
+            data[1] = 0x01; // apply immediately
+            ESP_LOGI("adg2188", "Disconnecting X0 <-> Y0");
+          }
+
+          id(adg_state) = !id(adg_state);
+
+          id(adg2188).write(data, 2);

@@ -86,7 +86,7 @@ i2c:
 
 i2c_device:
   id: i2cdev
-  address: 0x2C
+  address: 0xE0
 
 # -------------------------
 # Outputs (Bell)
@@ -120,19 +120,32 @@ globals:
     type: bool
     initial_value: "false"
 
+  - id: bell_direction # can be either 1 or 2 depending on which direction the bell dinger is pointing
+    type: int
+    initial_value: "1"
 # -------------------------
 # Scripts
 # -------------------------
 interval:
+  - interval: 5s
+    then:
+      - lambda: 'id(key_press).execute("1");'
+          
     # 25Hz bell ring
   - interval: 20ms  # Half-period for 25Hz
     then:
       - lambda: |-
           if (id(bell_active)) {
             // Toggle bell_1
-            id(bell_1).toggle();
-            // bell_2 is opposite
-            id(bell_2).write(!id(bell_1).state);
+            if(id(bell_direction) == 1) {
+              id(bell_1).turn_on();
+              id(bell_2).turn_off();
+              id(bell_direction) = 2; 
+            } else {
+              id(bell_1).turn_off();
+              id(bell_2).turn_on(); 
+              id(bell_direction) = 1;
+            }
           } else {
             // Ensure both off when not ringing
             id(bell_1).turn_off();
@@ -161,13 +174,13 @@ script:
       key: string
     then:
       - lambda: |- 
-          id(i2cdev).write_byte(0x00, 0x12);
-          if (auto b = id(i2cdev).read_byte(0x01)) {
+          id(i2cdev).write_byte(0x80, 0x01);
+          //if (auto b = id(i2cdev).read_byte(0x01)) {
            // TODO
-          }
+          //}
 
     # Bell ringing script with UK cadence
-  - id: uk_ring_bell
+  - id: ring_bell
     mode: queued
     then:
       - lambda: 'id(bell_active) = true;'
@@ -182,30 +195,27 @@ script:
           condition:
             lambda: 'return id(hook).state && id(speaker_voltage).state > id(ring_min_voltage);'
           then:
-            - script.execute: uk_ring_bell
+            - script.execute: ring_bell
 
-  # Hook down pressed
+  # Hang up
   - id: hook_down
     then:
       - logger.log: "Hook DOWN detected"
-      - if:
-          condition:
-            lambda: 'return id(speaker_voltage).state > id(ring_min_voltage);'
-          then:
-            - script.execute: ring_bell
-            - script.execute: 
-                id: key_press
-                key: "talk"
-              
-  # Hook up pressed
-  - id: hook_up
-    then:
-      - logger.log: "Hook UP detected"
       - script.execute: 
           id: key_press
           key: "end"
-      - output.turn_off: bell_1
-      - output.turn_off: bell_2
+                          
+  # Lift receiver
+  - id: hook_up
+    then:
+      - logger.log: "Hook UP detected"
+      - if:
+          condition: 
+            lambda: 'return id(speaker_voltage).state > id(ring_min_voltage);'
+          then:
+            - script.execute: 
+                id: key_press
+                key: "talk"
 
   # Count pulses from dial
   - id: count_pulses
@@ -221,11 +231,10 @@ script:
       - lambda: |-
           if (id(pulse_timer_running)) {
             ESP_LOGD("main","Dial pulses counted: %d", id(pulse_count));
-            // Send intercom button
-            // Then send number of pulses
-            // For demo: log only
-            id(pulse_count) = 0;
-            id(pulse_timer_running) = false;
+            // Press intercom button
+            id(key_press).execute("intercom");
+            // Then press number of pulses
+            id(key_press).execute(std::to_string(id(pulse_count)));
           }
 
 
