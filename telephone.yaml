@@ -1,7 +1,7 @@
 esphome:
   name: telephone
   friendly_name: telephone
-
+      
 esp32:
   board: esp32dev
   framework:
@@ -9,6 +9,7 @@ esp32:
 
 # Enable logging
 logger:
+  level: INFO
 
 # Enable Home Assistant API
 api:
@@ -30,120 +31,56 @@ wifi:
 
 captive_portal:
 
-############### TEMPORARY
-on_boot:
-  priority: 600
-  then:
-    - delay: 20s
-    - script-execute: key_press
-      key: "1"
-    - delay: 5s
-    - script-execute: key_press
-      key: "2"
-    - delay: 5s
-    - script-execute: key_press
-      key: "3"
-    - delay: 5s
-    - script-execute: key_press
-      key: "4"
-    - delay: 5s
-    - script-execute: key_press
-      key: "5"
-    - delay: 5s
-    - script-execute: key_press
-      key: "6"
-    - delay: 5s
-    - script-execute: key_press
-      key: "7"
-    - delay: 5s
-    - script-execute: key_press
-      key: "8"
-    - delay: 5s
-    - script-execute: key_press
-      key: "9"
-    - delay: 5s
-    - script-execute: key_press
-      key: "0"
-    - delay: 5s
-    - script-execute: key_press
-      key: "*"
-    - delay: 5s
-    - script-execute: key_press
-      key: "#"
-    - delay: 5s
-    - script-execute: key_press
-      key: "TALK"
-    - delay: 5s
-    - script-execute: key_press
-      key: "END"
-    - delay: 5s
-    - script-execute: key_press
-      key: "SBR"
-    - delay: 5s
-    - script-execute: key_press
-      key: "UP"
-    - delay: 5s
-    - script-execute: key_press
-      key: "LEFT"
-    - delay: 5s
-    - script-execute: key_press
-      key: "DOWN"
-    - delay: 5s
-    - script-execute: key_press
-      key: "RIGHT"
-    - delay: 5s
-
 
 # -------------------------
 # Inputs
 # -------------------------
 
 # Analog input for speaker detection
-# sensor:
-#   - platform: adc
-#     pin: GPIO36                 # Adjust to your speaker input pin
-#     name: "Speaker Voltage"
-#     id: speaker_voltage
-#     update_interval: 50ms
-#     filters:
-#       - sliding_window_moving_average:
-#           window_size: 5
-#           send_every: 1
+sensor:
+  - platform: adc
+    pin: GPIO34
+    name: "Speaker Voltage"
+    id: speaker_voltage
+    sampling_mode: max
+    update_interval: 50ms
+    filters:
+      - sliding_window_moving_average:
+          window_size: 5
+          send_every: 1
 
-# binary_sensor:
-#   # Hook switch input
-#   - platform: gpio
-#     pin:
-#       number: GPIO16             # Hook switch GPIO
-#       mode: INPUT_PULLUP
-#       inverted: True
-#     name: "Hook"
-#     id: hook
-#     on_press:
-#       then:
-#         - script.execute: hook_down
-#     on_release:
-#       then:
-#         - script.execute: hook_up
+binary_sensor:
+  # Hook switch input
+  - platform: gpio
+    pin:
+      number: GPIO15
+      mode: INPUT_PULLUP
+    name: "Hook"
+    id: hook
+    on_press:
+      then:
+        - script.execute: hook_down
+    on_release:
+      then:
+        - script.execute: hook_up
 
-#   # Dial pulse input
-#   - platform: gpio
-#     pin:
-#       number: GPIO4             # Dial pulse GPIO
-#       mode: INPUT_PULLUP
-#       inverted: True
-#     name: "Dial"
-#     id: dial
-#     on_press:
-#       then:
-#         - script.execute: count_pulses
+  # Dial pulse input
+  - platform: gpio
+    pin:
+      number: GPIO4
+      mode: INPUT_PULLUP
+    name: "Dial"
+    id: dial
+    on_press:
+      then:
+        - script.execute: dial_pulse
 
 # -------------------------
 # I2C Bus for Keypad (ADG2188)
 # -------------------------
 i2c:
   sda: 21
-  scl: 22
+  scl: 3
   scan: true
   frequency: 50kHz
 
@@ -154,14 +91,14 @@ i2c_device:
 # -------------------------
 # Outputs (Bell)
 # -------------------------
-# output:
-#   - platform: gpio
-#     pin: 25
-#     id: bell_1
+output:
+  - platform: gpio
+    pin: 25
+    id: bell_1
 
-#   - platform: gpio
-#     pin: 26
-#     id: bell_2
+  - platform: gpio
+    pin: 26
+    id: bell_2
 
 # -------------------------
 # Constants
@@ -169,171 +106,155 @@ i2c_device:
 globals:
   - id: ring_min_voltage
     type: float
-    initial_value: "2.0"  # Adjust to your threshold voltage for sound detection
+    initial_value: "0.1"
 
-  - id: pulse_count
+  - id: pulse_count # counts pulses from dial
     type: int
     initial_value: "0"
 
-  - id: pulse_timer_running
+  - id: pulse_timer_running # true when pulse counting timer is running
     type: bool
     initial_value: "false"
 
-  - id: bell_active # true when the bell is ringing as part of the UK cadence simulation
+  - id: ringing # true when the DECT phone is ringing
+    type: bool
+    initial_value: "false"
+
+  - id: bell_required # true when the bell simulation is running
+    type: bool
+    initial_value: "false"
+
+  - id: bell_active # true when the bell is actually making a sound as part of the UK cadence simulation
     type: bool
     initial_value: "false"
 
   - id: bell_direction # can be either 1 or 2 depending on which direction the bell dinger is pointing
     type: int
     initial_value: "1"
+
+  - id: control_byte # for ADG2188 control
+    type: uint8_t
+    initial_value: "0"
+
+
 # -------------------------
 # Scripts
 # -------------------------
-# interval:
-  #   # 25Hz bell ring
-  # - interval: 20ms  # Half-period for 25Hz
-  #   then:
-  #     - lambda: |-
-  #         if (id(bell_active)) {
-  #           // Toggle bell_1
-  #           if(id(bell_direction) == 1) {
-  #             id(bell_1).turn_on();
-  #             id(bell_2).turn_off();
-  #             id(bell_direction) = 2; 
-  #           } else {
-  #             id(bell_1).turn_off();
-  #             id(bell_2).turn_on(); 
-  #             id(bell_direction) = 1;
-  #           }
-  #         } else {
-  #           // Ensure both off when not ringing
-  #           id(bell_1).turn_off();
-  #           id(bell_2).turn_off();
-  #         }
+interval:
+    # 25Hz bell ring
+  - interval: 20ms  # Half-period for 25Hz
+    then:
+      - lambda: |-
+          if (id(bell_active)) {
+            // Toggle bell_1
+            if(id(bell_direction) == 1) {
+              id(bell_1).turn_on();
+              id(bell_2).turn_off();
+              id(bell_direction) = 2;
+              ESP_LOGI("main","Bell ding"); 
+            } else {
+              id(bell_1).turn_off();
+              id(bell_2).turn_on(); 
+              id(bell_direction) = 1;
+              ESP_LOGI("main","Bell dong");
+            }
+          } else {
+            // Ensure both off when not ringing
+            id(bell_1).turn_off();
+            id(bell_2).turn_off();
+          }
 
-  #   # Sound detection
-  # - interval: 50ms
-  #   then:
-  #     - lambda: |-
-  #         static bool bell_running = false;
-  #         if (id(hook).state && id(speaker_voltage).state > id(ring_min_voltage)) {
-  #           if (!bell_running) {
-  #             bell_running = true;
-  #             id(ring_bell).execute();
-  #           }
-  #         } else {
-  #           bell_running = false;
-  #         }
-
+     # Sound detection
+  - interval: 50ms
+    then:
+      - lambda: |-
+          id(ringing) = id(speaker_voltage).state > id(ring_min_voltage);
+          if (id(ringing)) {
+            ESP_LOGI("main","Ringing detected");
+            id(ringing_stopped).stop();
+            if(id(hook).state && !id(bell_required)) {
+              id(bell_required) = true;
+              ESP_LOGI("main","Phone on-hook. Starting bell ringing");
+              id(ring_bell).execute();
+            }
+          } else {
+            if(id(bell_required)) {
+              ESP_LOGI("main","No Ringing detected. Starting timer");
+              id(ringing_stopped).execute();
+            }
+          }
 
 script:
-    # Press a key on the keypad
-  - id: key_press
+    #  Bell ringing script with UK cadence
+  - id: ring_bell
     mode: queued
+    then:
+      - logger.log: Bell phase 1
+      - lambda: 'id(bell_active) = true;'
+      - delay: 400ms
+      - logger.log: Bell phase 2
+      - lambda: 'id(bell_active) = false;'
+      - delay: 200ms
+      - logger.log: Bell phase 3
+      - lambda: 'id(bell_active) = true;'
+      - delay: 400ms
+      - logger.log: Bell phase 4
+      - lambda: 'id(bell_active) = false;'
+      - delay: 2000ms
+      - if:
+          condition:
+            lambda: 'return id(bell_required);'
+          then:
+            - script.execute: ring_bell
+
+
+  - id: ringing_stopped
+    mode: single
+    then:
+      - delay: 1s   # wait 1 second to ensure ringing has really stopped
+      - lambda: |-
+          //id(ring_stop_timer_running) = true;
+          ESP_LOGI("main","Ringing stopped");
+          id(bell_required) = false;
+          id(ring_bell).stop();
+          id(bell_active) = false;
+          //id(ring_stop_timer_running) = false;
+
+  - id: key_press
+    mode: single
     parameters:
       key: string
-    variables:
-      control_byte: uint8_t
     then:
-      - lambda: |- 
+      - lambda: |-
+          ESP_LOGI("main","Key Press: %s", key.c_str()); 
           uint8_t x=0; 
           uint8_t y=0;
           
-          switch(id(key).value) {
-            case "SBL":
-              x=0;
-              y=3;
-              break;
-            case "SBR":
-              x=1;
-              y=3;
-              break;
-            case "UP":
-              x=0;
-              y=4;
-              break;
-            case "DOWN":
-              x=1;
-              y=4;
-              break;
-            case "LEFT":
-              x=2;
-              y=5;
-              break;
-            case "RIGHT":
-              x=1;
-              y=6;
-              break;
-            case "TALK":
-              x=3;
-              y=4;
-              break;
-            case "END":
-              x=4;
-              y=7;
-              break;
-            case "1":
-              x=0;
-              y=0;
-              break;
-            case "2":
-              x=0;
-              y=1;
-              break;
-            case "3":
-              x=0;
-              y=2;
-              break;
-            case "4":
-              x=3;
-              y=0;
-              break;
-            case "5":
-              x=3;
-              y=1;
-              break;
-            case "6":
-              x=3;
-              y=2;
-              break;
-            case "7":
-              x=1;
-              y=0;
-              break;
-            case "8":
-              x=1;
-              y=1;
-              break;
-            case "9":
-              x=1;
-              y=2;
-              break;
-            case "0":
-              x=2;
-              y=1;
-              break;
-            case "*":
-              x=2;
-              y=0;
-              break;
-            case "#":
-              x=2;
-              y=2;
-              break;
-            case "SPPHONE":
-              x=2;
-              y=3;
-              break;
-            case "INTERCOM":
-              x=3;
-              y=3;
-              break;
-            case "RECALL":
-              x=2;
-              y=4;
-              break;
-            default:
-              ESP_LOGW("keypad", "Unrecognised key");
+          if(key =="SBL") { x=0; y=3; }
+          else if(key =="SBR") { x=1;  y=3; }
+          else if(key =="UP") { x=0; y=4; }
+          else if(key =="DOWN") { x=1; y=4; }
+          else if(key =="LEFT") { x=2; y=5; }
+          else if(key =="RIGHT") { x=1; y=6; }
+          else if(key =="TALK") { x=3; y=4; }
+          else if(key =="END") { x=4; y=7; }
+          else if(key =="1") { x=0; y=0; }
+          else if(key =="3") { x=0; y=2; }
+          else if(key =="4") { x=3; y=0; }
+          else if(key =="5") { x=3; y=1; }
+          else if(key =="6") { x=3; y=2; }
+          else if(key =="7") { x=1; y=0; }
+          else if(key =="8") { x=1; y=1; }
+          else if(key =="9") { x=1; y=2; }
+          else if(key =="0") { x=2; y=1; }
+          else if(key =="*") { x=2; y=0; }
+          else if(key == "#") { x=2; y=2; }
+          else if(key =="SPPHONE") { x=2; y=3; }
+          else if(key =="INTERCOM") { x=3; y=3; }
+          else if(key =="RECALL") { x=2; y=4; }
+          else {
+            ESP_LOGW("main","Unknown key: %s", key.c_str());
+            return;
           }
 
           // See ADG2188 datasheet.
@@ -341,80 +262,82 @@ script:
           // bit 6-3 : AX   (4 bits, AX3..AX0)
           // bit 2-0 : AY   (3 bits, AY2..AY0)
 
-          control_byte = (x << 3) | y;
+          id(control_byte) = (x << 3) | y;
 
           uint8_t i2cPackets[2];
-          data[0] = controlByte | 0x80; // Switch on
-          data[1] = 0x01; // apply immediately
+          i2cPackets[0] = id(control_byte) | 0x80; // Switch on
+          i2cPackets[1] = 0x01; // apply immediately
 
-          id(adg2188).write(data, 2);
+          id(adg2188).write(i2cPackets, 2);
         
       - delay: 100ms
       - lambda: |-
           uint8_t i2cPackets[2];
-          data[0] = controlByte; // Switch off
-          data[1] = 0x01; // apply immediately
+          i2cPackets[0] = id(control_byte); // Switch off
+          i2cPackets[1] = 0x01; // apply immediately
 
-          id(adg2188).write(data, 2);
-          
-          
+          id(adg2188).write(i2cPackets, 2);
 
-    # Bell ringing script with UK cadence
-  # - id: ring_bell
-  #   mode: queued
-  #   then:
-  #     - lambda: 'id(bell_active) = true;'
-  #     - delay: 400ms
-  #     - lambda: 'id(bell_active) = false;'
-  #     - delay: 200ms
-  #     - lambda: 'id(bell_active) = true;'
-  #     - delay: 400ms
-  #     - lambda: 'id(bell_active) = false;'
-  #     - delay: 2000ms
-  #     - while:
-  #         condition:
-  #           lambda: 'return id(hook).state && id(speaker_voltage).state > id(ring_min_voltage);'
-  #         then:
-  #           - script.execute: ring_bell
-
-  # # Hang up
-  # - id: hook_down
-  #   then:
-  #     - logger.log: "Hook DOWN detected"
-  #     - script.execute: 
-  #         id: key_press
-  #         key: "end"
+  # Hang up
+  - id: hook_down
+    then:
+      - logger.log:
+          level: INFO
+          format: "Hook DOWN"
+      - script.execute: 
+          id: key_press
+          key: "END"
                           
-  # # Lift receiver
-  # - id: hook_up
-  #   then:
-  #     - logger.log: "Hook UP detected"
-  #     - if:
-  #         condition: 
-  #           lambda: 'return id(speaker_voltage).state > id(ring_min_voltage);'
-  #         then:
-  #           - script.execute: 
-  #               id: key_press
-  #               key: "talk"
+  # Lift receiver
+  - id: hook_up
+    then:
+      - logger.log:
+          level: INFO
+          format: "Hook UP"
+      - if:
+          condition: 
+            lambda: 'return id(bell_required);'
+          then:
+            - script.execute: 
+                id: key_press
+                key: "TALK"
+          else:
+            - script.execute: 
+                id: hook_up_action_not_ringing
 
-  # # Count pulses from dial
-  # - id: count_pulses
-  #   then:
-  #     - lambda: |-
-  #         if (!id(pulse_timer_running)) {
-  #           id(pulse_count) = 1;
-  #           id(pulse_timer_running) = true;
-  #         } else {
-  #           id(pulse_count) += 1;
-  #         }
-  #     - delay: 1s
-  #     - lambda: |-
-  #         if (id(pulse_timer_running)) {
-  #           ESP_LOGD("main","Dial pulses counted: %d", id(pulse_count));
-  #           // Press intercom button
-  #           id(key_press).execute("intercom");
-  #           // Then press number of pulses
-  #           id(key_press).execute(std::to_string(id(pulse_count)));
-  #         }
+  - id: hook_up_action_not_ringing
+    then:
+      - script.execute: 
+          id: key_press
+          key: "INTERCOM"
+      - delay: 200ms
+      - script.execute: 
+          id: key_press
+          key: "INTERCOM"
 
+  # Count pulses from dial
+  - id: dial_pulse
+    mode: queued
+    then:
+      - lambda: |-
+          ESP_LOGI("main","Dial pulse detected");
+          if (!id(pulse_timer_running)) {
+            id(pulse_count) = 1;
+            id(pulse_timer_running) = true;
+          } else {
+            id(pulse_count) += 1;
+          }
+      - script.execute: pulse_finished
+
+  - id: pulse_finished
+    mode: restart
+    then:
+      - delay: 1s   # wait 1 second for no more pulses
+      - lambda: |-
+          ESP_LOGI("pulse", "Pulses counted: %d", id(pulse_count));
+          // Reset for next series
+          id(pulse_timer_running) = false;
+          std::string number_to_dial = to_string(id(pulse_count));
+          id(key_press).execute(number_to_dial);
+          id(pulse_count) = 0;
 
