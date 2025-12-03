@@ -136,6 +136,173 @@ globals:
     type: uint8_t
     initial_value: "0"
 
+# -------------------------
+# HA buttons
+# -------------------------
+
+button:
+  - platform: template
+    name: "Keypad 0"
+    id: kp_0
+    on_press:
+      then:
+        - script.execute: key_press
+          key: "0"
+  - platform: template
+    name: "Keypad 1"
+    id: kp_1
+    on_press:
+      then:
+        - script.execute: key_press
+          key: "1"
+  - platform: template
+    name: "Keypad 2"
+    id: kp_2
+    on_press:
+      then:
+        - script.execute: key_press
+          key: "2"
+  - platform: template
+    name: "Keypad 3"
+    id: kp_3
+    on_press:
+      then:
+        - script.execute: key_press
+          key: "3"
+  - platform: template
+    name: "Keypad 4"
+    id: kp_4
+    on_press:
+      then:
+        - script.execute: key_press
+          key: "4"
+  - platform: template
+    name: "Keypad 5"
+    id: kp_5
+    on_press:
+      then:
+        - script.execute: key_press
+          key: "5"
+  - platform: template
+    name: "Keypad 6"
+    id: kp_6
+    on_press:
+      then:
+        - script.execute: key_press
+          key: "6"
+  - platform: template
+    name: "Keypad 7"
+    id: kp_7
+    on_press:
+      then:
+        - script.execute: key_press
+          key: "7"
+  - platform: template
+    name: "Keypad 8"
+    id: kp_8
+    on_press:
+      then:
+        - script.execute: key_press
+          key: "8"
+  - platform: template
+    name: "Keypad 9"
+    id: kp_9
+    on_press:
+      then:
+        - script.execute: key_press
+          key: "9"
+  - platform: template
+    name: "Keypad *"
+    id: kp_star
+    on_press:
+      then:
+        - script.execute: key_press
+          key: "*"
+  - platform: template
+    name: "Keypad #"
+    id: kp_hash
+    on_press:
+      then:
+        - script.execute: key_press
+          key: "#"
+  - platform: template
+    name: "Keypad SoftMenuLeft"
+    id: kp_sbl
+    on_press:
+      then:
+        - script.execute: key_press
+          key: "SBL"
+  - platform: template
+    name: "Keypad SoftMenuRight"
+    id: kp_sbr
+    on_press:
+      then:
+        - script.execute: key_press
+          key: "SBR"
+  - platform: template
+    name: "Keypad Up"
+    id: kp_up
+    on_press:
+      then:
+        - script.execute: key_press
+          key: "UP"
+  - platform: template
+    name: "Keypad Down"
+    id: kp_down
+    on_press:
+      then:
+        - script.execute: key_press
+          key: "DOWN"
+  - platform: template
+    name: "Keypad Left"
+    id: kp_left
+    on_press:
+      then:
+        - script.execute: key_press
+          key: "LEFT"
+  - platform: template
+    name: "Keypad Right"
+    id: kp_right
+    on_press:
+      then:
+        - script.execute: key_press
+          key: "RIGHT"
+  - platform: template
+    name: "Keypad Talk"
+    id: kp_talk
+    on_press:
+      then:
+        - script.execute: key_press
+          key: "TALK"
+  - platform: template
+    name: "Keypad End"
+    id: kp_end
+    on_press:
+      then:
+        - script.execute: key_press
+          key: "END"
+  - platform: template
+    name: "Keypad Intercom"
+    id: kp_intercom
+    on_press:
+      then:
+        - script.execute: key_press
+          key: "INTERCOM"
+  - platform: template
+    name: "Keypad Speakerphone"
+    id: kp_spphone
+    on_press:
+      then:
+        - script.execute: key_press
+          key: "SPPHONE"
+  - platform: template
+    name: "Keypad Recall"
+    id: kp_recall
+    on_press:
+      then:
+        - script.execute: key_press
+          key: "RECALL"
+
 
 # -------------------------
 # Scripts
@@ -151,12 +318,12 @@ interval:
               id(bell_1).turn_on();
               id(bell_2).turn_off();
               id(bell_direction) = 2;
-              ESP_LOGI("main","Bell ding"); 
+              ESP_LOGD("main","Bell ding"); 
             } else {
               id(bell_1).turn_off();
               id(bell_2).turn_on(); 
               id(bell_direction) = 1;
-              ESP_LOGI("main","Bell dong");
+              ESP_LOGD("main","Bell dong");
             }
           } else {
             // Ensure both off when not ringing
@@ -170,11 +337,11 @@ interval:
       - lambda: |-
           id(ringing) = id(speaker_voltage).state > id(ring_min_voltage);
           if (id(ringing)) {
-            ESP_LOGI("main","Ringing detected");
+            ESP_LOGD("main","Ringing detected");
             id(ringing_stopped).stop();
             if(id(hook).state && !id(bell_required)) {
               id(bell_required) = true;
-              ESP_LOGI("main","Phone on-hook. Starting bell ringing");
+              ESP_LOGI("main","Ringing detected. Phone on-hook. Starting bell ringing");
               id(ring_bell).execute();
             }
           } else {
@@ -213,12 +380,10 @@ script:
     then:
       - delay: 1s   # wait 1 second to ensure ringing has really stopped
       - lambda: |-
-          //id(ring_stop_timer_running) = true;
           ESP_LOGI("main","Ringing stopped");
           id(bell_required) = false;
           id(ring_bell).stop();
           id(bell_active) = false;
-          //id(ring_stop_timer_running) = false;
 
   - id: key_press
     mode: single
